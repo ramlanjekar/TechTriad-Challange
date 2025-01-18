@@ -264,7 +264,31 @@ class TenderSummarizer:
 
         return chunks
 
+    def extract_json_from_string(input_string: str):
+            """
+            Extract JSON data from a string that may contain additional text.
 
+            Args:
+                input_string (str): The input string containing JSON and potentially extra text.
+
+            Returns:
+                dict: The extracted JSON data as a Python dictionary.
+                str: Error message if JSON extraction fails.
+            """
+            try:
+                # Match the first JSON-like structure in the string using regex
+                json_pattern = r'(\{.*?\}|\[.*?\])'
+                match = re.search(json_pattern, input_string, re.DOTALL)
+
+                if match:
+                    # Parse the JSON portion of the string
+                    json_data = json.loads(match.group(0))
+                    return json_data
+                else:
+                    return {"error": "No valid JSON found in the input string."}
+            except json.JSONDecodeError as e:
+                return {"error": f"Invalid JSON: {str(e)}"}
+                
     def assess_chunk_relevance(self, chunk: ChunkInfo, api_key: str) -> Tuple[bool, float]:
 
         system_prompt = prompt_for_chunk_relevance
@@ -281,12 +305,12 @@ class TenderSummarizer:
                 max_tokens=100
             )
 
-            result = eval(response.choices[0].message.content)
-            return result["is_relevant"], result["relevance_score"]
-
-        except Exception as e:
-            logging.error(f"Error in relevance assessment: {str(e)}")
-            return False, 0.0
+            json_data = extract_json_from_string(response.choices[0].message.content)
+              if "error" in json_data:
+                  logging.error(f"Error in JSON extraction: {json_data['error']}")
+                  return False, 0.0
+              
+              return json_data.get("is_relevant", False), json_data.get("relevance_score", 0.0)
 
     def summarize_chunk(self, chunk: ChunkInfo) -> str:
 
