@@ -1,4 +1,21 @@
-
+import dask.delayed
+import dask.distributed
+from typing import List, Dict, Tuple, Optional
+import numpy as np
+from PyPDF2 import PdfReader
+import groq
+import os
+from dataclasses import dataclass
+import logging
+from concurrent.futures import ThreadPoolExecutor
+import time
+from math import ceil
+from google.colab import userdata
+import concurrent.futures
+from tenacity import retry, stop_after_attempt, wait_exponential
+import json
+import re
+import time
 
 @dataclass
 class ChunkInfo:
@@ -305,3 +322,29 @@ class TenderSummarizer:
         except Exception as e:
             logging.error(f"Error processing document: {str(e)}")
             raise
+
+
+def main():
+    api_keys=[]
+    for i in range(7):
+        key = userdata.get(f"GROQ_API_KEY{i+1}")
+        if key:
+            api_keys.append(key)
+
+
+    summarizer = TenderSummarizer(api_keys, relevance_api_count=4)
+
+    try:
+        pdf_path = "Path to your pdf"
+        summary = summarizer.process_tender_document(pdf_path)
+        print("\nFinal Tender Summary:")
+        print("=" * 80)
+        print(summary)
+        print("=" * 80)
+      
+
+    except Exception as e:
+        logging.error(f"Error in main process: {str(e)}")
+
+if __name__ == "__main__":
+    main()
