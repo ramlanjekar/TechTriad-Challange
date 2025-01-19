@@ -15,6 +15,9 @@ import re
 
 
 
+
+
+
 @dataclass
 class BOQItem:
     product_name: str
@@ -155,7 +158,7 @@ class BOQExtractor:
             self.logger.error(f"Error extracting fields: {e}")
             return []
 
-    def process_document(self, pdf_path: str, output_path: str) -> None:
+    def process_document(self, pdf_path: str, output_path: str):
         """Process document and save to Excel."""
         try:
             pdf_path = Path(pdf_path)
@@ -189,12 +192,12 @@ class BOQExtractor:
                 for item in all_items
             ])
 
-            df.to_excel(output_path, index=False)
-            self.logger.info(f"Saved {len(df)} items to {output_path}")
+            return df
 
         except Exception as e:
             self.logger.error(f"Processing failed: {str(e)}")
             raise
+
 
 def main():
     try:
@@ -202,7 +205,8 @@ def main():
         pdf_path = "/content/tender_601813909e29b_TenderNitPPbag.pdf"
         output_path = "extracted_boq.xlsx"
 
-        extractor.process_document(pdf_path, output_path)
+        df=extractor.process_document(pdf_path, output_path)
+        df.to_excel(output_path, index=False)
 
     except Exception as e:
         logging.error(f"Processing failed: {str(e)}")
