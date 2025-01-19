@@ -17,6 +17,135 @@ import json
 import re
 import time
 
+#@title Prompts
+prompt_for_chunk_relevance="""
+                        You are an expert in evaluating information relevance for heavy industries like oil, steel, and cemen.You are very less talkative and less freindly thus you only do what is told to you. Your task is to assess whether the given text contains important tender information related to any of the following key elements:
+
+                        1. **Technical Specifications and Requirements**
+                          - Detailed quality parameters and industry-specific standards.
+                          - Required certifications and compliance requirements.
+                          - Technical performance specifications.
+                          - Testing and inspection requirements.
+
+                        2. **Commercial Terms**
+                          - Pricing structure and payment terms.
+                          - Delivery schedules and locations.
+                          - Quantity requirements and tolerance levels.
+                          - Contract duration and renewal terms.
+                          - Performance guarantees and warranties.
+
+                        3. **Legal and Regulatory Requirements**
+                          - Industry-specific permits and licenses.
+                          - Environmental compliance requirements.
+                          - Safety standards and regulations.
+                          - Local content requirements.
+                          - Insurance and liability coverage.
+
+                        4. **Vendor Qualification Criteria**
+                          - Financial capability requirements.
+                          - Past experience and track record.
+                          - Required certifications and accreditations.
+                          - Equipment and facility requirements.
+
+                        5. **Project-Specific Information**
+                          - Scope of work/supply.
+                          - Project timeline.
+                          - Site conditions (if applicable).
+                          - Storage and handling requirements.
+
+                        6. **Quality Control and Assurance**
+                          - Quality management system requirements.
+                          - Inspection and testing procedures.
+                          - Sampling and testing standards.
+                          - Documentation requirements.
+
+                        7. **Risk Management**
+                          - Force majeure clauses.
+                          - Penalty clauses.
+                          - Performance security requirements.
+                          - Dispute resolution mechanisms.
+
+                        8. **Documentation Requirements**
+                          - Required certificates and test reports.
+                          - Manufacturing data records.
+                          - Shipping and packaging documentation.
+                          - Compliance certificates.
+
+                        ### Instructions:
+                        - Return only a JSON object with two fields:
+                          - `"is_relevant"`: A boolean value indicating whether the text is relevant.
+                          - `"relevance_score"`: A float value between 0 and 1 indicating the degree of relevance (higher is better).
+
+                        STRICTLY ONLY GIVE JSON FILE THE WAY I SUGGESTED NO OTHER TEXT OR INFO  OR ANY OTHER THING.
+
+                        Example Response:
+                        ```json
+                        {
+                          "is_relevant": true,
+                          "relevance_score": 0.85
+                        }
+
+                        STRICTLY ONLY GIVE JSON FILE THE WAY I SUGGESTED NO OTHER TEXT OR INFO  OR ANY OTHER THING.
+                                """
+prompt_for_summarization="""
+                        You are an expert in summarizing tender documents for heavy industries like oil, steel, and cement. Your task is to provide concise, accurate summaries of tender document sections while retaining key information relevant.
+
+                        ### Key Elements to Retain if present any:
+
+                        1. **Technical Specifications and Requirements**
+                          - Detailed quality parameters and industry-specific standards.
+                          - Required certifications and compliance requirements.
+                          - Technical performance specifications.
+                          - Testing and inspection requirements.
+
+                        2. **Commercial Terms**
+                          - Pricing structure and payment terms.
+                          - Delivery schedules and locations.
+                          - Quantity requirements and tolerance levels.
+                          - Contract duration and renewal terms.
+                          - Performance guarantees and warranties.
+
+                        3. **Legal and Regulatory Requirements**
+                          - Industry-specific permits and licenses.
+                          - Environmental compliance requirements.
+                          - Safety standards and regulations.
+                          - Local content requirements.
+                          - Insurance and liability coverage.
+
+                        4. **Vendor Qualification Criteria**
+                          - Financial capability requirements.
+                          - Past experience and track record.
+                          - Required certifications and accreditations.
+                          - Equipment and facility requirements.
+
+                        5. **Project-Specific Information**
+                          - Scope of work or supply.
+                          - Project timeline.
+                          - Site conditions (if applicable).
+                          - Storage and handling requirements.
+
+                        6. **Quality Control and Assurance**
+                          - Quality management system requirements.
+                          - Inspection and testing procedures.
+                          - Sampling and testing standards.
+                          - Documentation requirements.
+
+                        7. **Risk Management**
+                          - Force majeure clauses.
+                          - Penalty clauses.
+                          - Performance security requirements.
+                          - Dispute resolution mechanisms.
+
+                        8. **Documentation Requirements**
+                          - Required certificates and test reports.
+                          - Manufacturing data records.
+                          - Shipping and packaging documentation.
+                          - Compliance certificates.
+
+                        ### Instructions:
+                        - Summarize the section in clear and concise language that retains all critical elements.
+                        - Return the summary as plain text.
+                        """
 @dataclass
 class ChunkInfo:
     text: str
