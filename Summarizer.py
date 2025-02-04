@@ -1,5 +1,4 @@
-import dask.delayed
-import dask.distributed
+
 from typing import List, Dict, Tuple, Optional
 import numpy as np
 from PyPDF2 import PdfReader
@@ -10,68 +9,70 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 import time
 from math import ceil
-from google.colab import userdata
 import concurrent.futures
 from tenacity import retry, stop_after_attempt, wait_exponential
 import json
 import re
 import time
+from dotenv import load_dotenv 
+from concurrent.futures import ThreadPoolExecutor
+from typing import List
 
 #@title Prompts
 prompt_for_chunk_relevance="""
                         You are an expert in evaluating information relevance for heavy industries like oil, steel, and cemen.You are very less talkative and less freindly thus you only do what is told to you. Your task is to assess whether the given text contains important tender information related to any of the following key elements:
 
-                        1. **Technical Specifications and Requirements**
+                        1.  Technical Specifications and Requirements 
                           - Detailed quality parameters and industry-specific standards.
                           - Required certifications and compliance requirements.
                           - Technical performance specifications.
                           - Testing and inspection requirements.
 
-                        2. **Commercial Terms**
+                        2.  Commercial Terms 
                           - Pricing structure and payment terms.
                           - Delivery schedules and locations.
                           - Quantity requirements and tolerance levels.
                           - Contract duration and renewal terms.
                           - Performance guarantees and warranties.
 
-                        3. **Legal and Regulatory Requirements**
+                        3.  Legal and Regulatory Requirements 
                           - Industry-specific permits and licenses.
                           - Environmental compliance requirements.
                           - Safety standards and regulations.
                           - Local content requirements.
                           - Insurance and liability coverage.
 
-                        4. **Vendor Qualification Criteria**
+                        4.  Vendor Qualification Criteria 
                           - Financial capability requirements.
                           - Past experience and track record.
                           - Required certifications and accreditations.
                           - Equipment and facility requirements.
 
-                        5. **Project-Specific Information**
+                        5.  Project-Specific Information 
                           - Scope of work/supply.
                           - Project timeline.
                           - Site conditions (if applicable).
                           - Storage and handling requirements.
 
-                        6. **Quality Control and Assurance**
+                        6.  Quality Control and Assurance 
                           - Quality management system requirements.
                           - Inspection and testing procedures.
                           - Sampling and testing standards.
                           - Documentation requirements.
 
-                        7. **Risk Management**
+                        7.  Risk Management 
                           - Force majeure clauses.
                           - Penalty clauses.
                           - Performance security requirements.
                           - Dispute resolution mechanisms.
 
-                        8. **Documentation Requirements**
+                        8.  Documentation Requirements 
                           - Required certificates and test reports.
                           - Manufacturing data records.
                           - Shipping and packaging documentation.
                           - Compliance certificates.
 
-                        ### Instructions:
+                            Instructions:
                         - Return only a JSON object with two fields:
                           - `"is_relevant"`: A boolean value indicating whether the text is relevant.
                           - `"relevance_score"`: A float value between 0 and 1 indicating the degree of relevance (higher is better).
@@ -90,61 +91,120 @@ prompt_for_chunk_relevance="""
 prompt_for_summarization="""
                         You are an expert in summarizing tender documents for heavy industries like oil, steel, and cement. Your task is to provide concise, accurate summaries of tender document sections while retaining key information relevant.
 
-                        ### Key Elements to Retain if present any:
+                        Key Elements to Retain if present any:
 
-                        1. **Technical Specifications and Requirements**
+                        1. Technical Specifications and Requirements
                           - Detailed quality parameters and industry-specific standards.
                           - Required certifications and compliance requirements.
                           - Technical performance specifications.
                           - Testing and inspection requirements.
 
-                        2. **Commercial Terms**
+                        2. Commercial Terms
                           - Pricing structure and payment terms.
                           - Delivery schedules and locations.
                           - Quantity requirements and tolerance levels.
                           - Contract duration and renewal terms.
                           - Performance guarantees and warranties.
 
-                        3. **Legal and Regulatory Requirements**
+                        3. Legal and Regulatory Requirements
                           - Industry-specific permits and licenses.
                           - Environmental compliance requirements.
                           - Safety standards and regulations.
                           - Local content requirements.
                           - Insurance and liability coverage.
 
-                        4. **Vendor Qualification Criteria**
+                        4. Vendor Qualification Criteria
                           - Financial capability requirements.
                           - Past experience and track record.
                           - Required certifications and accreditations.
                           - Equipment and facility requirements.
 
-                        5. **Project-Specific Information**
+                        5. Project-Specific Information
                           - Scope of work or supply.
                           - Project timeline.
                           - Site conditions (if applicable).
                           - Storage and handling requirements.
 
-                        6. **Quality Control and Assurance**
+                        6. Quality Control and Assurance
                           - Quality management system requirements.
                           - Inspection and testing procedures.
                           - Sampling and testing standards.
                           - Documentation requirements.
 
-                        7. **Risk Management**
+                        7. Risk Management
                           - Force majeure clauses.
                           - Penalty clauses.
                           - Performance security requirements.
                           - Dispute resolution mechanisms.
 
-                        8. **Documentation Requirements**
+                        8. Documentation Requirements
                           - Required certificates and test reports.
                           - Manufacturing data records.
                           - Shipping and packaging documentation.
                           - Compliance certificates.
 
-                        ### Instructions:
+                            Instructions:
                         - Summarize the section in clear and concise language that retains all critical elements.
                         - Return the summary as plain text.
+                        """
+prompt_for_final_summarization="""
+                        You are an expert in summarizing tender documents for heavy industries like oil, steel, and cement. Your task is to provide concise, accurate summaries of tender document in the format given below sections while retaining key information relevant.
+
+                        Key Elements to Retain if present any:
+
+                        1. Technical Specifications and Requirements
+                          - Detailed quality parameters and industry-specific standards.
+                          - Required certifications and compliance requirements.
+                          - Technical performance specifications.
+                          - Testing and inspection requirements.
+
+                        2. Commercial Terms
+                          - Pricing structure and payment terms.
+                          - Delivery schedules and locations.
+                          - Quantity requirements and tolerance levels.
+                          - Contract duration and renewal terms.
+                          - Performance guarantees and warranties.
+
+                        3. Legal and Regulatory Requirements
+                          - Industry-specific permits and licenses.
+                          - Environmental compliance requirements.
+                          - Safety standards and regulations.
+                          - Local content requirements.
+                          - Insurance and liability coverage.
+
+                        4. Vendor Qualification Criteria
+                          - Financial capability requirements.
+                          - Past experience and track record.
+                          - Required certifications and accreditations.
+                          - Equipment and facility requirements.
+
+                        5. Project-Specific Information
+                          - Scope of work or supply.
+                          - Project timeline.
+                          - Site conditions (if applicable).
+                          - Storage and handling requirements.
+
+                        6. Quality Control and Assurance
+                          - Quality management system requirements.
+                          - Inspection and testing procedures.
+                          - Sampling and testing standards.
+                          - Documentation requirements.
+
+                        7. Risk Management
+                          - Force majeure clauses.
+                          - Penalty clauses.
+                          - Performance security requirements.
+                          - Dispute resolution mechanisms.
+
+                        8. Documentation Requirements
+                          - Required certificates and test reports.
+                          - Manufacturing data records.
+                          - Shipping and packaging documentation.
+                          - Compliance certificates.
+
+                            Instructions:
+                        - Summarize the section in clear and concise language that retains all critical elements.
+                        - Return the summary as plain text.  this is the format , give summary this way.
                         """
 @dataclass
 class ChunkInfo:
@@ -154,11 +214,11 @@ class ChunkInfo:
     summary: str = ""
 
 class TenderSummarizer:
-    def __init__(self, api_keys: List[str], relevance_api_count: int = 3):
+    def __init__(self, api_keys: List[str], relevance_api_count: int = 4):
         if len(api_keys) < relevance_api_count:
             raise ValueError(f"Need at least {relevance_api_count} API keys")
 
-        self.relevance_api_keys = api_keys[:relevance_api_count]
+        self.relevance_api_keys = api_keys
         self.summary_api_keys = api_keys
 
         self.relevance_clients = [groq.Groq(api_key=key) for key in self.relevance_api_keys]
@@ -288,14 +348,14 @@ class TenderSummarizer:
             except json.JSONDecodeError as e:
                 return {"error": f"Invalid JSON: {str(e)}"}
 
-    def assess_chunk_relevance(self, chunk: ChunkInfo, api_key: str) -> Tuple[bool, float]:
+    def assess_chunk_relevance(self, chunk: ChunkInfo,i) -> Tuple[bool, float]:
             system_prompt = prompt_for_chunk_relevance
-
+            api_key = self.relevance_api_keys[i % len(self.relevance_api_keys)]
             client = groq.Groq(api_key=api_key)
 
                     # Add timeout parameter
             response = client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
+                        model="llama-3.1-8b-instant",
                         messages=[
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": chunk.text}
@@ -331,7 +391,11 @@ class TenderSummarizer:
                 max_tokens=100
             )
 
-            return response.choices[0].message.content
+            summary_tmp = response.choices[0].message.content
+            formatted_summary = "\n".join(summary_tmp.split(". "))
+            return formatted_summary
+            # return response.choices[0].message.content
+        
         except Exception as e:
             logging.error(f"Error in chunk summarization: {str(e)}")
             return ""
@@ -342,12 +406,12 @@ class TenderSummarizer:
 
         combined_text = " ".join(summaries)
 
-        system_prompt = prompt_for_summarization
+        system_prompt = prompt_for_final_summarization
 
         try:
             client = groq.Groq(api_key=api_key)
             response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="llama-3.3-70b-specdec",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": combined_text}
@@ -355,7 +419,10 @@ class TenderSummarizer:
                 temperature=0.3,
                 max_tokens=1000
             )
-            return response.choices[0].message.content
+            final_summary = response.choices[0].message.content
+            return final_summary
+            # return response.choices[0].message.content
+        
         except Exception as e:
             logging.error(f"Error in final summarization: {str(e)}")
             return ""
@@ -368,11 +435,12 @@ class TenderSummarizer:
             logging.info("Extracting text from PDF...")
             text = self.extract_text(pdf_path)
             
+            api_key = self.summary_api_keys[0]
 
             # Handle very short documents
             if len(text.split()) < 500:
                 logging.info("Document is very short, creating direct summary...")
-                return self.create_final_summary([text])
+                return self.create_final_summary([text], api_key)
 
             # Create initial chunks
             logging.info("Creating initial chunks...")
@@ -382,13 +450,19 @@ class TenderSummarizer:
             # Assess relevance sequentially
             logging.info("Assessing chunk relevance...")
             relevance_results = []
+            executors_list = []
 
             # Iterate over chunks and process them one at a time
-            for i, chunk in enumerate(initial_chunks):
-                api_key = self.relevance_api_keys[i % len(self.relevance_api_keys)]
-            
-                result = self.assess_chunk_relevance(chunk, api_key)
-                relevance_results.append(result)
+            with ThreadPoolExecutor(max_workers=20) as executor:
+                    # Submit all tasks
+                    for i, chunk in enumerate(initial_chunks):
+                        future = executor.submit(self.assess_chunk_relevance, chunk, i)
+                        executors_list.append(future)
+                    
+                    # Collect results in order
+                    for future in executors_list:
+                        result = future.result()
+                        relevance_results.append(result)
                
 
            
@@ -410,13 +484,13 @@ class TenderSummarizer:
        
 
             # Merge chunks
-            current_chunks = self.merge_chunks(relevant_chunks, target_size=4000)
+            current_chunks = self.merge_chunks(relevant_chunks, target_size=2000)
             total_tokens = sum(chunk.length for chunk in current_chunks)
 
             print("current chunks length", len(current_chunks))
 
             # Progressive summarization
-            while total_tokens > 5000:
+            while total_tokens > 2000:
                     logging.info(f"Current total tokens: {total_tokens}")
 
                     # Summarize chunks sequentially
@@ -453,27 +527,28 @@ class TenderSummarizer:
             raise
 
 
-def main():
-    api_keys=[]
-    for i in range(7):
-        key = userdata.get(f"GROQ_API_KEY{i+1}")
+def summarize_pdf(pdf_path: str) -> str:
+    load_dotenv()  # Call this ONCE, ideally at the beginning of your script
+
+    # Get API keys from environment variables
+    api_keys = []
+    for i in range(1, 6):  # Assuming you have 5 keys named API_KEY_1 to API_KEY_5
+        key = os.getenv(f"API_KEY_{i}")
         if key:
             api_keys.append(key)
+        else:
+            logging.warning(f"API_KEY_{i} not found in .env file.")
 
+    if not api_keys:
+        raise ValueError("No API keys found in .env file.  Please set API_KEY_1, API_KEY_2, etc.")
 
     summarizer = TenderSummarizer(api_keys, relevance_api_count=4)
 
     try:
-        pdf_path = "Path to your pdf"
         summary = summarizer.process_tender_document(pdf_path)
-        print("\nFinal Tender Summary:")
-        print("=" * 80)
-        print(summary)
-        print("=" * 80)
-      
-
+        return summary
     except Exception as e:
         logging.error(f"Error in main process: {str(e)}")
+        return str(e)
 
-if __name__ == "__main__":
-    main()
+
