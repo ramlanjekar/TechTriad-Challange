@@ -40,12 +40,13 @@ class PDFProcessor:
             raise RuntimeError(f"Failed to initialize PDFProcessor: {str(e)}")
 
     def _init_groq_client(self) -> groq.Groq:
-        """Initialize Groq client with API key validation."""
-        from google.colab import userdata
-        api_key = userdata.get('GROQ_API_KEY')
+        """Initialize with Groq client."""
+        # Get the API key from environment variables
+        api_key = os.getenv(f"API_KEY_1")
         if not api_key:
-            raise ValueError("GROQ_API_KEY not found in userdata")
+            raise ValueError("GROQ_API_KEY not found in environment")
         return groq.Groq(api_key=api_key)
+
 
     def _validate_pdf(self, pdf_path: str) -> None:
         """Validate PDF file existence and readability."""
@@ -276,36 +277,19 @@ class PDFProcessor:
             self.logger.error(f"Query processing failed: {str(e)}")
             raise
 
-def main():
+def talk(filepath: str, question: str) -> str:
+    """Process the query and return the response."""
     try:
         processor = PDFProcessor(
             cache_dir="./cache",
             similarity_threshold=0.3
         )
         
-        pdf_paths = ["/content/NIPS-2017-attention-is-all-you-need-Paper.pdf"]
-        query = "What mechanism does the Transformer rely on instead of recurrence?"
+        pdf_paths = [filepath]
+        result = processor.process_query(question, pdf_paths)
         
-        result = processor.process_query(query, pdf_paths)
+        return result['response']
         
-        print("\nQuery Results")
-        print("=" * 80)
-        print(f"Query: {result['query']}")
-        print("\nResponse:", result['response'])
-        print("\nRelevant Chunks:")
-        for i, chunk in enumerate(result["relevant_chunks"], 1):
-            print(f"\nChunk {i}:")
-            print(f"Source: {chunk['source_file']}, Page: {chunk['page_number']}")
-            print(f"Similarity: {chunk['similarity']:.4f}")
-            print(f"Text: {chunk['text']}")
-            
     except Exception as e:
         logging.error(f"Processing failed: {str(e)}")
         raise
-
-if __name__ == "__main__":
-    main()
-
-
-
-#requirements : !pip install -q groq PyPDF2 sentence-transformers numpy PyPDF2 sklearn dataclasses pathlib tenacity torch torchvision torchaudio
