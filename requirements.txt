@@ -1,0 +1,13 @@
+sentence-transformers
+numpy
+PyPDF2
+typing-extensions  
+scikit-learn
+groq
+dataclasses
+pathlib
+tenacity
+torch
+pandas
+flask
+python-dotenv  
