@@ -1,7 +1,6 @@
-
 from PyPDF2 import PdfReader
 import pandas as pd
-
+# import python-dotenv
 from typing import List, Dict, Optional, Tuple
 import groq
 import os
@@ -12,10 +11,6 @@ from pathlib import Path
 import time
 from concurrent.futures import ThreadPoolExecutor
 import re
-
-
-
-
 
 
 @dataclass
@@ -52,11 +47,12 @@ class BOQItem:
         self.quantity = re.sub(r'[^\d.,]', '', self.quantity)
         self.unit = self.unit.strip().lower()
 
+
 class BOQExtractor:
     def __init__(self):
         """Initialize with Groq client."""
-        # Get first available API key from environment
-        api_key = userdata.get('GROQ_API_KEY')
+        # Get the API key from environment variables
+        api_key = os.getenv(f"API_KEY_1")
         if not api_key:
             raise ValueError("GROQ_API_KEY not found in environment")
 
@@ -198,19 +194,20 @@ class BOQExtractor:
             self.logger.error(f"Processing failed: {str(e)}")
             raise
 
-
-def main():
+def process_bod_pdf(pdf_path: str):
+    """Process BOD PDF and save to Excel."""
     try:
         extractor = BOQExtractor()
-        pdf_path = "/content/tender_601813909e29b_TenderNitPPbag.pdf"
-        output_path = "extracted_boq.xlsx"
+        output_path = pdf_path.replace('.pdf', '.xlsx')
 
-        df=extractor.process_document(pdf_path, output_path)
+        df = extractor.process_document(pdf_path, output_path)
         df.to_excel(output_path, index=False)
+
+        return output_path
 
     except Exception as e:
         logging.error(f"Processing failed: {str(e)}")
         raise
 
-if __name__ == "__main__":
-    main()
+
+
