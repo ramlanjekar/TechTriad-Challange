@@ -15,10 +15,10 @@ import json
 import re
 import time
 from dotenv import load_dotenv 
-from concurrent.futures import ThreadPoolExecutor
+
 from typing import List
 
-#@title Prompts
+#These ar the system prompts given to control the output of llms
 prompt_for_chunk_relevance="""
                         You are an expert in evaluating information relevance for heavy industries like oil, steel, and cemen.You are very less talkative and less freindly thus you only do what is told to you. Your task is to assess whether the given text contains important tender information related to any of the following key elements:
 
@@ -206,20 +206,30 @@ prompt_for_final_summarization="""
                         - Summarize the section in clear and concise language that retains all critical elements.
                         - Return the summary as plain text.  this is the format , give summary this way.
                         """
-@dataclass
+
+
+
+@dataclass # NOt used here extensively but can be used for advanced filtering purpose
 class ChunkInfo:
     text: str
     length: int
     relevance_score: float = 0.0
     summary: str = ""
 
+
+''' 
+    Here in the program multiple api keys because 
+    - To make system robust by each api called round robin wise thus none of them would exeed rate limit
+    - We want to make system free of use for larger pdfs. 
+ '''
+ 
 class TenderSummarizer:
     def __init__(self, api_keys: List[str], relevance_api_count: int = 4):
         if len(api_keys) < relevance_api_count:
             raise ValueError(f"Need at least {relevance_api_count} API keys")
 
-        self.relevance_api_keys = api_keys
-        self.summary_api_keys = api_keys
+        self.relevance_api_keys = api_keys  # These api keys of groq cloud llms for relevant chunks filtering
+        self.summary_api_keys = api_keys    # 
 
         self.relevance_clients = [groq.Groq(api_key=key) for key in self.relevance_api_keys]
         self.summary_clients = [groq.Groq(api_key=key) for key in self.summary_api_keys]
@@ -348,9 +358,9 @@ class TenderSummarizer:
             except json.JSONDecodeError as e:
                 return {"error": f"Invalid JSON: {str(e)}"}
 
-    def assess_chunk_relevance(self, chunk: ChunkInfo,i) -> Tuple[bool, float]:
+    def assess_chunk_relevance(self, chunk: ChunkInfo,api_key) -> Tuple[bool, float]:
             system_prompt = prompt_for_chunk_relevance
-            api_key = self.relevance_api_keys[i % len(self.relevance_api_keys)]
+            
             client = groq.Groq(api_key=api_key)
 
                     # Add timeout parameter
@@ -450,22 +460,13 @@ class TenderSummarizer:
             # Assess relevance sequentially
             logging.info("Assessing chunk relevance...")
             relevance_results = []
-            executors_list = []
+            
 
             # Iterate over chunks and process them one at a time
-            with ThreadPoolExecutor(max_workers=20) as executor:
-                    # Submit all tasks
-                    for i, chunk in enumerate(initial_chunks):
-                        future = executor.submit(self.assess_chunk_relevance, chunk, i)
-                        executors_list.append(future)
-                    
-                    # Collect results in order
-                    for future in executors_list:
-                        result = future.result()
-                        relevance_results.append(result)
-               
-
-           
+            for i, chunk in enumerate(initial_chunks):       
+                          api_key = self.relevance_api_keys[i % len(self.relevance_api_keys)]         
+                          result = self.assess_chunk_relevance(chunk, api_key)       
+                          relevance_results.append(result)
 
 
             # Filter and score relevant chunks
