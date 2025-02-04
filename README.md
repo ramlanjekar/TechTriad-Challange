@@ -1,2 +1,13 @@
-# TechTriad-Challange
-1) Summarizing large pdfs (200-1000) pages by round-robin API rotation 2) BOQ document creation from RFQ  3) Chat with multiple pdfs with buffer memory allocation 
+# Project Setup
+
+## Requirements
+
+1. Clone the repository first:
+   ```bash
+   git clone <repository-url>
+
+2. Install the necessary dependencies:
+   ```bash
+   pip install -r requirements.txt
+2. To run the program
+   run the command : python app.py
