@@ -121,28 +121,28 @@ class PDFProcessor:
             raise ValueError("No valid chunks created from input text")
             
         return chunks
-
+    
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def embed_texts(self, texts: List[str]) -> np.ndarray:
-        """Create embeddings with GPU memory management and caching."""
-        try:
-            # Clear GPU memory if using CUDA
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                gc.collect()
-            
-            embeddings = self.embedding_model.encode(
-                texts,
-                convert_to_tensor=True,
-                show_progress_bar=True,
-                batch_size=32
-            )
-            
-            return embeddings.cpu().numpy() if torch.is_tensor(embeddings) else embeddings
-            
-        except Exception as e:
-            self.logger.error(f"Embedding creation failed: {str(e)}")
-            raise
+            """Create embeddings without using PyTorch or GPU."""
+            try:
+                # Generate embeddings using the embedding model
+                embeddings = self.embedding_model.encode(
+                    texts,
+                    convert_to_tensor=False,  # Ensure output is not a PyTorch tensor
+                    show_progress_bar=True,
+                    batch_size=5
+                )
+                
+                # Convert to numpy array if not already
+                if not isinstance(embeddings, np.ndarray):
+                    embeddings = np.array(embeddings)
+                
+                return embeddings
+                
+            except Exception as e:
+                self.logger.error(f"Embedding creation failed: {str(e)}")
+                raise
 
     def find_relevant_chunks(
         self, 
