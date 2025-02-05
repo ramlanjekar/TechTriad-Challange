@@ -7,7 +7,6 @@ groq
 dataclasses
 pathlib
 tenacity
-torch
 pandas
 flask
 python-dotenv  
