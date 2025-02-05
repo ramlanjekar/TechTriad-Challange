@@ -12,6 +12,7 @@ import time
 from tenacity import retry, stop_after_attempt, wait_exponential
 import torch
 import gc
+from dotenv import load_dotenv 
 
 @dataclass
 class SearchResult:
@@ -41,8 +42,8 @@ class PDFProcessor:
 
     def _init_groq_client(self) -> groq.Groq:
         """Initialize with Groq client."""
-        # Get the API key from environment variables
-        api_key = os.getenv(f"API_KEY_1")
+        load_dotenv()
+        api_key = os.getenv(f"API_KEY_2")
         if not api_key:
             raise ValueError("GROQ_API_KEY not found in environment")
         return groq.Groq(api_key=api_key)
@@ -121,28 +122,28 @@ class PDFProcessor:
             raise ValueError("No valid chunks created from input text")
             
         return chunks
-    
+
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
     def embed_texts(self, texts: List[str]) -> np.ndarray:
-            """Create embeddings without using PyTorch or GPU."""
-            try:
-                # Generate embeddings using the embedding model
-                embeddings = self.embedding_model.encode(
-                    texts,
-                    convert_to_tensor=False,  # Ensure output is not a PyTorch tensor
-                    show_progress_bar=True,
-                    batch_size=5
-                )
-                
-                # Convert to numpy array if not already
-                if not isinstance(embeddings, np.ndarray):
-                    embeddings = np.array(embeddings)
-                
-                return embeddings
-                
-            except Exception as e:
-                self.logger.error(f"Embedding creation failed: {str(e)}")
-                raise
+        """Create embeddings with GPU memory management and caching."""
+        try:
+            # Clear GPU memory if using CUDA
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                gc.collect()
+            
+            embeddings = self.embedding_model.encode(
+                texts,
+                convert_to_tensor=True,
+                show_progress_bar=True,
+                batch_size=5
+            )
+            
+            return embeddings.cpu().numpy() if torch.is_tensor(embeddings) else embeddings
+            
+        except Exception as e:
+            self.logger.error(f"Embedding creation failed: {str(e)}")
+            raise
 
     def find_relevant_chunks(
         self, 
@@ -277,19 +278,142 @@ class PDFProcessor:
             self.logger.error(f"Query processing failed: {str(e)}")
             raise
 
-def talk(filepath: str, question: str) -> str:
-    """Process the query and return the response."""
+import logging
+import traceback
+from typing import Optional, Dict
+
+def talk(filepath: str, question: str) -> Optional[Dict]:
+    """
+    Process the query with extensive error diagnostics.
+    
+    Args:
+        filepath (str): Path to the PDF file
+        question (str): Query to be processed
+    
+    Returns:
+        Optional[Dict]: Detailed response or error information
+    """
+    # Configure comprehensive logging
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        filename='pdf_processor_debug.log'
+    )
+    logger = logging.getLogger(__name__)
+
     try:
+        # Extensive pre-processing checks
+        import os
+        import sys
+
+        # Basic input validation
+        if not filepath:
+            raise ValueError("PDF file path is empty")
+        if not question:
+            raise ValueError("Query is empty")
+        
+        # Detailed file checks
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"File does not exist: {filepath}")
+        
+        if not filepath.lower().endswith('.pdf'):
+            raise ValueError(f"Invalid file type. Must be PDF, got: {os.path.splitext(filepath)[1]}")
+        
+        # File permissions and readability check
+        if not os.access(filepath, os.R_OK):
+            raise PermissionError(f"Cannot read file: {filepath}")
+        
+        # Log system and environment details
+        logger.info(f"Python Version: {sys.version}")
+        logger.info(f"Processing File: {filepath}")
+        logger.info(f"Question Length: {len(question)} characters")
+
+        # Initialize processor with detailed logging
         processor = PDFProcessor(
             cache_dir="./cache",
             similarity_threshold=0.3
         )
         
-        pdf_paths = [filepath]
-        result = processor.process_query(question, pdf_paths)
+        # Detailed processing with extensive logging
+        logger.info("Starting PDF text extraction...")
+        pdf_texts = processor.extract_text_from_pdfs([filepath])
         
-        return result['response']
+        logger.info("Creating text chunks...")
+        chunks = processor.create_text_chunks(pdf_texts)
         
+        logger.info(f"Processing query: {question}")
+        relevant_chunks = processor.find_relevant_chunks(question, chunks)
+        
+        if not relevant_chunks:
+            logger.warning("No relevant chunks found")
+            return {
+                "status": "warning",
+                "message": "No relevant content found in the document",
+                "details": {
+                    "file": filepath,
+                    "question": question,
+                    "chunk_count": len(chunks)
+                }
+            }
+        
+        # Get LLM response
+        response = processor.get_llm_response(question, relevant_chunks)
+        
+        return {
+            "status": "success",
+            "response": response,
+            "details": {
+                "relevant_chunks": [
+                    {
+                        "text": chunk.text,
+                        "similarity": float(chunk.similarity),
+                        "page_number": chunk.page_number,
+                        "source_file": chunk.source_file
+                    }
+                    for chunk in relevant_chunks
+                ]
+            }
+        }
+    
     except Exception as e:
-        logging.error(f"Processing failed: {str(e)}")
-        raise
+        # Comprehensive error logging
+        logger.error("Detailed Exception Information:")
+        logger.error(f"Exception Type: {type(e).__name__}")
+        logger.error(f"Exception Message: {str(e)}")
+        logger.error("Full Traceback:")
+        logger.error(traceback.format_exc())
+
+        # Return a structured error response
+        return {
+            "status": "error",
+            "message": "Failed to process request",
+            "error_details": {
+                "type": type(e).__name__,
+                "description": str(e),
+                "full_traceback": traceback.format_exc()
+            }
+        }
+
+# Wrapper function for simplified usage
+def process_pdf(filepath: str, question: str) -> Optional[str]:
+    """
+    Simplified wrapper that returns just the response string.
+    
+    Args:
+        filepath (str): Path to the PDF file
+        question (str): Query to be processed
+    
+    Returns:
+        Optional[str]: Response text or None if processing failed
+    """
+    result = talk(filepath, question)
+    
+    if result and result.get('status') == 'success':
+        return result.get('response')
+    
+    # Log error for debugging
+    if result:
+        print(f"Processing Error: {result.get('message', 'Unknown error')}")
+        print(f"Error Details: {result.get('error_details', 'No additional details')}")
+    
+    return None
